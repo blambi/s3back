@@ -6,19 +6,19 @@ import os
 import argparse
 from ConfigParser import ConfigParser
 
-# for safty use OFB, and 56Bytes keys
-CHUNK_SIZE=4096
+# for safety use OFB, and 56Bytes keys
+CHUNK_SIZE=4096 # should be multiples of 8
 
 def encrypt(key, infile, outfile):
     """Takes key and input file object and output file object"""
     iv = Random.new().read(Blowfish.block_size)
     if verbose:
         print "iv: ", iv
-    outfile.write(iv) # Write iv to 1outfile
+    outfile.write(iv) # Write iv to outfile
 
     # calc max size to see if last chunk need padding (and number of padding bytes)
     file_size = os.fstat(infile.fileno()).st_size
-    pad_len = 8-(file_size%8) # 698380355
+    pad_len = 8-(file_size%8)
 
     if pad_len == 8:
         if verbose:
@@ -32,7 +32,7 @@ def encrypt(key, infile, outfile):
     cipher = Blowfish.new(key, Blowfish.MODE_OFB, iv)
 
     while True:
-        plain_data = infile.read(CHUNK_SIZE) # should be multiples of 8
+        plain_data = infile.read(CHUNK_SIZE)
 
         if not plain_data:
             break # Nothing more to read
@@ -55,7 +55,7 @@ def decrypt(key, infile, outfile):
         print "Padding: {}".format(padding)
 
     while True:
-        crypt_data = infile.read(CHUNK_SIZE) # should be multiples of 8
+        crypt_data = infile.read(CHUNK_SIZE)
 
         if not crypt_data:
             break # Nothing more to read
@@ -175,4 +175,3 @@ if '__main__' == __name__:
             # remove oldest file if more files then X
     if verbose:
         print "Removing tempfile {}".format(temp_name)
-
