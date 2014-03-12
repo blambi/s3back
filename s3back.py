@@ -4,6 +4,7 @@ from Crypto import Random
 from struct import pack
 import os
 import argparse
+from ConfigParser import ConfigParser
 
 # for safty use OFB, and 56Bytes keys
 CHUNK_SIZE=4096
@@ -101,11 +102,24 @@ if '__main__' == __name__:
     parser.add_argument('source', help="file to retrieve/send")
     parser.add_argument('target', help="target folder (use: s3://bucket/folder/file)")
     args = parser.parse_args()
+    verbose = args.verbose
 
     # Parse config file..
-    key = 'enkort liten nykel som jag tror ar lang nog, hepp det de'
+    if not os.path.exists(args.config):
+        print "Error: couldn't find config file {}".format(args.config)
+        exit(1)
+    config = ConfigParser()
+    config.readfp(open(args.config))
+    
+    key = config.get('crypto', 'secret')
+    if verbose:
+        print "Using {}bits strong key".format(len(key)*8)
+    s3_conf = {
+        'key': config.get('s3', 'secret'),
+        'secret': config.get('s3', 'secret')
+    }
+    rotation_keep = config.get('rotation', 'keep')
 
-    verbose = args.verbose
     temp_name = os.tempnam('/tmp')
     temp_file = open(temp_name, 'wb+')
 
@@ -117,7 +131,7 @@ if '__main__' == __name__:
                            os.listdir(os.path.dirname(args.source)))
             if args.edition == -1:
                 # find latest
-                pass
+                input_file = open(os.path.join(os.path.dirname(args.source), Rotation.get_last(files)), 'rb')
             else:
                 hit = filter(lambda x: x.endswith("_{}".format(args.edition)), files)
                 if hit:
