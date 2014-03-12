@@ -5,6 +5,7 @@ from struct import pack
 import os
 import argparse
 from ConfigParser import ConfigParser
+import tempfile
 
 # for safety use OFB, and 56Bytes keys
 CHUNK_SIZE=4096 # should be multiples of 8
@@ -13,7 +14,7 @@ def encrypt(key, infile, outfile):
     """Takes key and input file object and output file object"""
     iv = Random.new().read(Blowfish.block_size)
     if verbose:
-        print "iv: ", iv
+        print "iv: ", bytes_to_hexstr(iv)
     outfile.write(iv) # Write iv to outfile
 
     # calc max size to see if last chunk need padding (and number of padding bytes)
@@ -47,7 +48,7 @@ def encrypt(key, infile, outfile):
 def decrypt(key, infile, outfile):
     iv = infile.read(8)
     if verbose:
-        print "iv: ", iv
+        print "iv: ", bytes_to_hexstr(iv)
     cipher = Blowfish.new(key, Blowfish.MODE_OFB, iv)
 
     padding = ord(infile.read(1))
@@ -91,6 +92,12 @@ class Rotation:
         """Returns files to remove"""
         return []
 
+def bytes_to_hexstr(sbytes):
+    out = "0x"
+    for x in sbytes:
+        out += hex(ord(x))[2:]
+    return out
+
 
 if '__main__' == __name__:
     parser = argparse.ArgumentParser(description="Handles encryption, remote-storage and rotation of backups")
@@ -120,7 +127,8 @@ if '__main__' == __name__:
     }
     rotation_keep = config.get('rotation', 'keep')
 
-    temp_name = os.tempnam('/tmp')
+    ll_fp, temp_name = tempfile.mkstemp()
+    os.close(ll_fp)
     temp_file = open(temp_name, 'wb+')
 
     if args.source[:5] == 's3://':
@@ -173,5 +181,3 @@ if '__main__' == __name__:
             targ_name = Rotation.get_new_name(os.path.basename(args.target), files)
             os.rename(temp_name, os.path.join(os.path.dirname(args.target), targ_name))
             # remove oldest file if more files then X
-    if verbose:
-        print "Removing tempfile {}".format(temp_name)
