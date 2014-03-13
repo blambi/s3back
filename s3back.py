@@ -73,7 +73,7 @@ class Rotation:
     @classmethod
     def get_last(cls, files):
         if files:
-            return sorted(files)[-1]
+            return sorted(files, key=lambda x: int(x[x.find('_')+1::]))[-1]
         else:
             return []
 
@@ -88,9 +88,9 @@ class Rotation:
             return os.path.basename(target) + '_0'
 
     @classmethod
-    def pruge(cls, files, keep = 5):
+    def find_removable(cls, files, keep = 5):
         """Returns files to remove"""
-        return []
+        return sorted(files, key=lambda x: int(x[x.find('_')+1::]))[:-keep+1]
 
 def bytes_to_hexstr(sbytes):
     out = "0x"
@@ -125,7 +125,7 @@ if '__main__' == __name__:
         'key': config.get('s3', 'secret'),
         'secret': config.get('s3', 'secret')
     }
-    rotation_keep = config.get('rotation', 'keep')
+    rotation_keep = config.getint('rotation', 'keep')
 
     ll_fp, temp_name = tempfile.mkstemp()
     os.close(ll_fp)
@@ -180,4 +180,11 @@ if '__main__' == __name__:
                            os.listdir(os.path.dirname(args.target)))
             targ_name = Rotation.get_new_name(os.path.basename(args.target), files)
             os.rename(temp_name, os.path.join(os.path.dirname(args.target), targ_name))
+            if verbose:
+                print "Stored as {}".format(targ_name)
             # remove oldest file if more files then X
+            for old_file in Rotation.find_removable(files, rotation_keep):
+                old_full = os.path.join(os.path.dirname(args.target), old_file)
+                if verbose:
+                    print "Removing old file {}".format(old_full)
+                os.unlink(old_full)
