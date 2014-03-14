@@ -6,6 +6,9 @@ import os
 import argparse
 from ConfigParser import ConfigParser
 import tempfile
+import boto
+import boto.s3
+from boto.s3.key import Key
 
 # for safety use OFB, and 56Bytes keys
 CHUNK_SIZE=4096 # should be multiples of 8
@@ -78,6 +81,18 @@ class Rotation:
             return []
 
     @classmethod
+    def get_edition(cls, files, edition):
+        hit = filter(lambda x: x.endswith("_{}".format(edition)), files)
+        if hit:
+            if verbose:
+                print "Found editon #{} called '{}'".format(edition, hit[0])
+            #input_file = open(os.path.join(os.path.dirname(args.source), hit[0]))
+            return hit[0]
+        else:
+            print "Error: Couldn't find edition #{}".format(edition)
+            exit(1)
+
+    @classmethod
     def get_new_name(cls, target, files):
         last = cls.get_last(files)
 
@@ -98,6 +113,55 @@ def bytes_to_hexstr(sbytes):
         out += hex(ord(x))[2:]
     return out
 
+class S3:
+    def __init__(self, bucket):
+        self.bucket_name = bucket
+        self.connect()
+
+    def connect(self):
+        self.s3c = boto.connect_s3(aws_access_key_id=s3_conf['id'], aws_secret_access_key=s3_conf['secret'])
+        self.bucket = self.s3c.get_bucket(self.bucket_name)
+
+    def store(self, infile, target_name, retries=3):
+        # find next serial name
+        self.files = filter(lambda x: x.startswith(target_name+'_'),
+                            map(lambda x: x.key, self.bucket.get_all_keys()))
+
+        name = Rotation.get_new_name(os.path.basename(target_name), self.files)
+        if target_name.find('_'):
+            name = os.path.dirname(target_name) + '/' + name
+
+        if verbose:
+            print "Uploading file {}".format(name)
+
+        # upload
+        while retries >= 0:
+            try:
+                k = Key(self.bucket)
+                k.key = name
+                k.set_contents_from_file(infile)
+                return True
+            except Exception, e:
+                print "Exception, while trying to upload to S3"
+                self.connect()
+                retries -= 1
+        return False
+
+    def retrieve(self, source_name, temp_file, edition=-1):
+        self.files = filter(lambda x: x.startswith(source_name+'_'),
+                            map(lambda x: x.key, self.bucket.get_all_keys()))
+        if edition == -1:
+            name = Rotation.get_last(self.files)
+        else:
+            name = Rotation.get_edition(self.files, edition)
+
+        if verbose:
+            print "Trying to retrieve {}".format(name)
+        return False
+
+    def rotate(self, keep=5):
+        pass
+
 
 if '__main__' == __name__:
     parser = argparse.ArgumentParser(description="Handles encryption, remote-storage and rotation of backups")
@@ -117,12 +181,12 @@ if '__main__' == __name__:
         exit(1)
     config = ConfigParser()
     config.readfp(open(args.config))
-    
+
     key = config.get('crypto', 'secret')
     if verbose:
         print "Using {}bits strong key".format(len(key)*8)
     s3_conf = {
-        'key': config.get('s3', 'secret'),
+        'id': config.get('s3', 'id'),
         'secret': config.get('s3', 'secret')
     }
     rotation_keep = config.getint('rotation', 'keep')
@@ -132,7 +196,23 @@ if '__main__' == __name__:
     temp_file = open(temp_name, 'wb+')
 
     if args.source[:5] == 's3://':
-        raise ValueError, "Not implemented yet"
+        bucket_name, source_name = args.source[5:].split('/', 1)
+        s3 = S3(bucket_name)
+
+        ll_fp, input_name = tempfile.mkstemp()
+        os.close(ll_fp)
+        input_file = open(input_name, 'wb+')
+
+        if args.decrypt:
+            if not s3.retrieve(source_name, input_file, args.edition):
+                print "Unable to fetch {}".format(args.source)
+                exit(2)
+        else:
+            raise NotImplementedError, "s3 source for encryption isn't implemented yet"
+        # re-open temp input for reading
+        input_file.close()
+        input_file = open(input_name, 'rb')
+
     else:
         if args.decrypt:
             files = filter(lambda x: x.startswith(os.path.basename(args.source)+'_'),
@@ -141,14 +221,8 @@ if '__main__' == __name__:
                 # find latest
                 input_file = open(os.path.join(os.path.dirname(args.source), Rotation.get_last(files)), 'rb')
             else:
-                hit = filter(lambda x: x.endswith("_{}".format(args.edition)), files)
-                if hit:
-                    if verbose:
-                        print "Found editon #{} called '{}'".format(args.edition, hit[0])
-                    input_file = open(os.path.join(os.path.dirname(args.source), hit[0]))
-                else:
-                    print "Could'nt find edition #{}".format(args.edition)
-                    exit(1)
+                hit = Rotation.get_edition(files, args.edition)
+                input_file = open(os.path.join(os.path.dirname(args.source), hit))
         else:
             input_file = open(args.source, 'rb')
 
@@ -165,9 +239,17 @@ if '__main__' == __name__:
     temp_file.close()
 
     if args.target[:5] == 's3://':
-        raise ValueError, "Not implemented yet"
+        bucket_name, target_name = args.target[5:].split('/', 1)
+        s3 = S3(bucket_name)
+
         # upload file, with date suffix
+        temp_file = open(temp_name, 'rb')
+        if not s3.store(temp_file, target_name):
+            print "Unable to upload backup!"
+            exit(2)
+        temp_file.close()
         # remove oldest file if more files then X
+        s3.rotate()
         # remove temp file
         os.unlink(temp_name)
     else:
