@@ -155,9 +155,15 @@ class S3:
         else:
             name = Rotation.get_edition(self.files, edition)
 
+        if not name:
+            return False
+
         if verbose:
             print "Trying to retrieve {}".format(name)
-        return False
+
+        k = self.bucket.get_key(name)
+        k.get_contents_to_file(temp_file)
+        return True
 
     def rotate(self, keep=5):
         pass
