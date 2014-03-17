@@ -76,7 +76,7 @@ class Rotation:
     @classmethod
     def get_last(cls, files):
         if files:
-            return sorted(files, key=lambda x: int(x[x.find('_')+1::]))[-1]
+            return sorted(files, key=lambda x: int(x[x.rfind('_')+1::]))[-1]
         else:
             return []
 
@@ -105,7 +105,7 @@ class Rotation:
     @classmethod
     def find_removable(cls, files, keep = 5):
         """Returns files to remove"""
-        return sorted(files, key=lambda x: int(x[x.find('_')+1::]))[:-keep+1]
+        return sorted(files, key=lambda x: int(x[x.rfind('_')+1::]))[:-keep+1]
 
 def bytes_to_hexstr(sbytes):
     out = "0x"
